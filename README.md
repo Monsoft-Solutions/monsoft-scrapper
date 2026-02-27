@@ -2,11 +2,26 @@
 
 Universal web scraping + AI extraction toolkit. Fetches any website, strips junk, extracts structured data with LLMs. Includes web search with deep extraction.
 
-## Setup
+## Installation
 
 ```bash
-source /root/tools/scrapling-env/bin/activate
-cd /root/tools/scrapling-kit
+# Clone the repo
+git clone <repo-url> scrapling-kit
+cd scrapling-kit
+
+# Create Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install "scrapling[all]"
+
+# Install browser engines (Chromium for JS-rendered sites)
+scrapling install
+
+# Configure API keys
+cp .env.example .env
+# Edit .env with your keys
 ```
 
 ## Configuration
