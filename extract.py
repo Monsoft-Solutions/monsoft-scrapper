@@ -181,6 +181,37 @@ FORMAT_INSTRUCTIONS = {
 }
 
 
+def strip_code_fences(text: str) -> str:
+    """
+    Strip markdown code fences from LLM output.
+
+    Handles patterns like:
+        ```json\n{...}\n```
+        ```\n{...}\n```
+        ``` json\n{...}\n```
+    """
+    import re
+    stripped = text.strip()
+    # Match opening fence (with optional language tag) and closing fence
+    match = re.match(r'^```(?:\s*\w+)?\s*\n(.*?)\n\s*```\s*$', stripped, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return stripped
+
+
+def clean_json_response(content: str) -> str:
+    """
+    Strip code fences and validate JSON. Returns cleaned JSON string.
+    Logs a warning if the result is not valid JSON.
+    """
+    cleaned = strip_code_fences(content)
+    try:
+        json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        print("⚠️  LLM response is not valid JSON after stripping fences", file=sys.stderr)
+    return cleaned
+
+
 def build_prompt(text: str, links: dict, query: str, fmt: str) -> str:
     """Build the extraction prompt from page content + user query."""
     links_section = ''
@@ -384,7 +415,11 @@ def _extract_single(idx: int, result: dict, query: str, fmt: str, model: str) ->
         prompt = build_prompt(page_data['text'], page_data['links'], query, fmt)
         llm_result = call_llm(prompt, model)
 
-        out['extraction'] = llm_result['content']
+        content = llm_result['content']
+        if fmt == 'json':
+            content = clean_json_response(content)
+
+        out['extraction'] = content
         out['tokens_input'] = llm_result['tokens_input']
         out['tokens_output'] = llm_result['tokens_output']
         out['cost_estimate'] = llm_result['cost_estimate']
@@ -641,6 +676,10 @@ def extract(url: str, query: str = None, format: str = 'markdown',
         result=llm_result['content'],
     )
 
+    result_content = llm_result['content']
+    if format == 'json':
+        result_content = clean_json_response(result_content)
+
     return {
         'url': url,
         'final_url': page_data['final_url'],
@@ -654,7 +693,7 @@ def extract(url: str, query: str = None, format: str = 'markdown',
         'cost_estimate': llm_result['cost_estimate'],
         'latency_ms': llm_result['latency_ms'],
         'links': page_data['links'],
-        'result': llm_result['content'],
+        'result': result_content,
     }
 
 
