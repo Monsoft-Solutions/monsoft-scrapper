@@ -137,11 +137,11 @@ MODELS = {
         'tier': 'paid',
     },
     'deepseek-v3': {
-        'id': 'deepseek/deepseek-chat-v3-0324',
-        'name': 'DeepSeek V3',
-        'context': 196_608,
-        'cost_input': 0.27,
-        'cost_output': 1.10,
+        'id': 'deepseek/deepseek-v3.2',
+        'name': 'DeepSeek V3.2',
+        'context': 163_840,
+        'cost_input': 0.25,
+        'cost_output': 0.40,
         'tier': 'paid',
     },
 }

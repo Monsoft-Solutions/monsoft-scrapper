@@ -147,7 +147,7 @@ print(result['totals']['cost']) # Total cost
 | `gemini-3-flash` | Gemini 3 Flash | 1M | $0.50 |
 | `sonnet` | Claude Sonnet 4.6 | 1M | $3.00 |
 | `qwen3.5-397b` | Qwen3.5 397B | 262K | $0.55 |
-| `deepseek-v3` | DeepSeek V3 | 196K | $0.27 |
+| `deepseek-v3` | DeepSeek V3.2 | 163K | $0.25 |
 
 ## Files
 
