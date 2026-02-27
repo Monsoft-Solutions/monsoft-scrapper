@@ -33,6 +33,7 @@ import httpx
 from dotenv import load_dotenv
 
 from fetch import fetch_clean
+import db as logdb
 
 # Load .env from script directory (override=True to take precedence over system env)
 load_dotenv(Path(__file__).parent / '.env', override=True)
@@ -373,6 +374,11 @@ def _extract_single(idx: int, result: dict, query: str, fmt: str, model: str) ->
         if page_data['text_length'] < 100:
             out['status'] = 'empty'
             out['extraction'] = f'*Could not extract content from {url}*'
+            logdb.log_extraction(
+                url=url, query=query, format=fmt, model=model,
+                fetcher=page_data.get('fetcher', ''), status='empty',
+                text_length=page_data['text_length'],
+            )
             return out
 
         prompt = build_prompt(page_data['text'], page_data['links'], query, fmt)
@@ -389,10 +395,29 @@ def _extract_single(idx: int, result: dict, query: str, fmt: str, model: str) ->
               f"{llm_result['tokens_input']}→{llm_result['tokens_output']} tok | "
               f"{cost_str} | {llm_result['latency_ms']}ms", file=sys.stderr)
 
+        # Log extraction to database
+        logdb.log_extraction(
+            url=url, final_url=page_data.get('final_url', url),
+            query=query, format=fmt, model=model,
+            model_id=llm_result.get('model_id', ''),
+            fetcher=page_data.get('fetcher', ''),
+            status='success', text_length=page_data['text_length'],
+            tokens_in=llm_result['tokens_input'],
+            tokens_out=llm_result['tokens_output'],
+            cost=llm_result['cost_estimate'],
+            latency_ms=llm_result['latency_ms'],
+            result=llm_result['content'],
+        )
+
     except Exception as e:
         out['status'] = 'error'
         out['extraction'] = f'*Error extracting from {url}: {e}*'
         print(f"  [{idx}] ❌ {e}", file=sys.stderr)
+
+        logdb.log_extraction(
+            url=url, query=query, format=fmt, model=model,
+            status='error', error=str(e),
+        )
 
     return out
 
@@ -518,6 +543,22 @@ def search_extract(query: str, count: int = 10, deep: int = 0,
 
     markdown = '\n'.join(md_parts)
 
+    # Log search to database
+    logdb.log_search(
+        query=query,
+        count=count,
+        freshness=freshness or '',
+        deep=deep,
+        parallel=parallel,
+        model=model if deep > 0 else '',
+        results_found=len(results),
+        extracted_count=len([e for e in extractions if e.get('status') == 'success']),
+        total_tokens_in=totals['tokens_input'],
+        total_tokens_out=totals['tokens_output'],
+        total_cost=totals['cost'],
+        total_time_ms=totals['time_ms'],
+    )
+
     return {
         'query': query,
         'results': results,
@@ -557,7 +598,14 @@ def extract(url: str, query: str = None, format: str = 'markdown',
     page_data = fetch_clean(url, force_browser=force_browser)
 
     if not page_data['text'] or page_data['text_length'] < 100:
-        raise RuntimeError(f"Failed to extract content from {url} (got {page_data['text_length']} chars)")
+        error_msg = f"Failed to extract content from {url} (got {page_data['text_length']} chars)"
+        logdb.log_extraction(
+            url=url, final_url=page_data.get('final_url', ''),
+            query=query or '', format=format, model=model,
+            fetcher=page_data.get('fetcher', ''), status='empty',
+            text_length=page_data['text_length'], error=error_msg,
+        )
+        raise RuntimeError(error_msg)
 
     print(f"📄 {page_data['text_length']} chars (~{page_data['approx_tokens']} tokens) "
           f"via {page_data['fetcher']}", file=sys.stderr)
@@ -574,6 +622,24 @@ def extract(url: str, query: str = None, format: str = 'markdown',
     print(f"✅ Done in {llm_result['latency_ms']}ms | "
           f"{llm_result['tokens_input']}→{llm_result['tokens_output']} tokens | "
           f"Cost: {cost_str}", file=sys.stderr)
+
+    # Log to database
+    logdb.log_extraction(
+        url=url,
+        final_url=page_data['final_url'],
+        query=query,
+        format=format,
+        model=llm_result['model'],
+        model_id=llm_result['model_id'],
+        fetcher=page_data['fetcher'],
+        status='success',
+        text_length=page_data['text_length'],
+        tokens_in=llm_result['tokens_input'],
+        tokens_out=llm_result['tokens_output'],
+        cost=llm_result['cost_estimate'],
+        latency_ms=llm_result['latency_ms'],
+        result=llm_result['content'],
+    )
 
     return {
         'url': url,
@@ -618,6 +684,79 @@ def print_models():
     print()
 
 
+def _print_stats(model_filter: str = None):
+    """Print usage statistics."""
+    stats = logdb.get_stats(model_filter=model_filter)
+    totals = stats['totals']
+    searches = stats['searches']
+    models = stats['models']
+
+    total_ext = totals.get('total_extractions') or 0
+    if total_ext == 0 and not models:
+        print("📊 No usage data yet. Run some extractions first!")
+        return
+
+    print("\n📊 Usage Statistics")
+    if model_filter:
+        print(f"   Filtered: model = {model_filter}")
+    print()
+
+    # Totals
+    total_cost = totals.get('total_cost') or 0
+    cost_str = 'FREE' if total_cost == 0 else f"${total_cost:.4f}"
+    print(f"  Extractions:  {total_ext}")
+    print(f"  Successes:    {totals.get('successes') or 0}")
+    print(f"  Errors:       {totals.get('errors') or 0}")
+    print(f"  Tokens in:    {(totals.get('total_tokens_in') or 0):,}")
+    print(f"  Tokens out:   {(totals.get('total_tokens_out') or 0):,}")
+    print(f"  Total cost:   {cost_str}")
+    print(f"  Avg latency:  {totals.get('avg_latency_ms') or 0}ms")
+    if totals.get('first_extraction'):
+        print(f"  First:        {totals['first_extraction']}")
+        print(f"  Last:         {totals['last_extraction']}")
+
+    # Search stats
+    total_searches = searches.get('total_searches') or 0
+    if total_searches and not model_filter:
+        search_cost = searches.get('search_cost') or 0
+        s_cost_str = 'FREE' if search_cost == 0 else f"${search_cost:.4f}"
+        print(f"\n  Searches:     {total_searches}")
+        print(f"  Deep extracts:{searches.get('search_extractions') or 0}")
+        print(f"  Search cost:  {s_cost_str}")
+
+    # Per-model breakdown
+    if models:
+        print(f"\n  {'Model':<18} {'Calls':>6} {'Tokens In':>11} {'Tokens Out':>11} {'Cost':>10} {'Avg ms':>8}")
+        print(f"  {'─'*18} {'─'*6} {'─'*11} {'─'*11} {'─'*10} {'─'*8}")
+        for m in models:
+            mc = m['total_cost'] or 0
+            mc_str = 'FREE' if mc == 0 else f"${mc:.4f}"
+            print(f"  {m['model'] or 'unknown':<18} {m['total_calls']:>6} "
+                  f"{(m['total_tokens_in'] or 0):>11,} {(m['total_tokens_out'] or 0):>11,} "
+                  f"{mc_str:>10} {m['avg_latency_ms'] or 0:>8}")
+    print()
+
+
+def _print_history(limit: int):
+    """Print recent extraction history."""
+    rows = logdb.get_history(limit=limit)
+    if not rows:
+        print("📜 No extraction history yet.")
+        return
+
+    print(f"\n📜 Last {len(rows)} Extractions\n")
+    print(f"  {'ID':>5} {'Timestamp':<22} {'Status':<8} {'Model':<16} {'Tokens':>12} {'Cost':>8} {'URL'}")
+    print(f"  {'─'*5} {'─'*22} {'─'*8} {'─'*16} {'─'*12} {'─'*8} {'─'*40}")
+    for r in rows:
+        tok = f"{r['tokens_in'] or 0}→{r['tokens_out'] or 0}"
+        cost = r['cost'] or 0
+        cost_str = 'FREE' if cost == 0 else f"${cost:.4f}"
+        ts = (r['timestamp'] or '')[:19]
+        url = (r['url'] or '')[:60]
+        print(f"  {r['id']:>5} {ts:<22} {r['status']:<8} {(r['model'] or ''):.<16} {tok:>12} {cost_str:>8} {url}")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='AI-powered web data extractor',
@@ -640,6 +779,11 @@ def main():
     parser.add_argument('--browser', action='store_true', help='Force headless browser fetch')
     parser.add_argument('--meta', action='store_true', help='Append extraction metadata as JSON')
 
+    # Stats / history
+    parser.add_argument('--stats', action='store_true', help='Show usage statistics')
+    parser.add_argument('--history', type=int, nargs='?', const=20, metavar='N',
+                        help='Show last N extractions (default: 20)')
+
     # Search options
     parser.add_argument('-s', '--search', metavar='QUERY', help='Search the web instead of fetching a URL')
     parser.add_argument('--deep', type=int, default=0, metavar='N',
@@ -653,6 +797,14 @@ def main():
 
     if args.models:
         print_models()
+        return
+
+    if args.stats:
+        _print_stats(args.model)
+        return
+
+    if args.history is not None:
+        _print_history(args.history)
         return
 
     # Search mode
