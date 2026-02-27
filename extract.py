@@ -644,7 +644,7 @@ def main():
     parser.add_argument('-s', '--search', metavar='QUERY', help='Search the web instead of fetching a URL')
     parser.add_argument('--deep', type=int, default=0, metavar='N',
                         help='Deep extract top N search results (default: 0 = search only)')
-    parser.add_argument('--parallel', action='store_true', help='Run deep extractions in parallel')
+    parser.add_argument('--sequential', action='store_true', help='Run deep extractions sequentially (default: parallel)')
     parser.add_argument('--freshness', choices=['pd', 'pw', 'pm', 'py'],
                         help='Filter search results by time (pd=day, pw=week, pm=month, py=year)')
     parser.add_argument('--count', type=int, default=10, help='Number of search results (default: 10)')
@@ -665,7 +665,7 @@ def main():
                 extraction_query=args.query,
                 fmt=args.format,
                 model=args.model,
-                parallel=args.parallel,
+                parallel=not args.sequential,
                 freshness=args.freshness,
             )
         except Exception as e:

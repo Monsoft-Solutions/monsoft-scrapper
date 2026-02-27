@@ -66,11 +66,11 @@ python3 extract.py --search "cuba latest news"
 # Filter by freshness
 python3 extract.py --search "cuba latest news" --freshness pd   # pd=day, pw=week, pm=month, py=year
 
-# Deep extract top N results (sequential)
+# Deep extract top N results (parallel by default)
 python3 extract.py --search "cuba latest news" --deep 5 -m deepseek-v3
 
-# Deep extract in parallel (faster)
-python3 extract.py --search "cuba latest news" --deep 5 -m deepseek-v3 --parallel
+# Deep extract sequentially (safer for free models / rate limits)
+python3 extract.py --search "cuba latest news" --deep 5 -m auto-free --sequential
 
 # Custom extraction query for deep mode
 python3 extract.py --search "cuba latest news" --deep 3 -q "Extract key facts, quotes, and timeline" -m deepseek-v3
