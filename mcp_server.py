@@ -256,18 +256,18 @@ def main():
         description="MCP server for Monsoft Scrapper",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  python3 mcp_server.py                          # stdio (local)
-  python3 mcp_server.py --sse --port 8808        # SSE (remote)
-  python3 mcp_server.py --streamable-http        # Streamable HTTP
-  python3 mcp_server.py --sse --host 0.0.0.0     # Bind all interfaces""",
+  python3 mcp_server.py                              # stdio (local)
+  python3 mcp_server.py --http --port 8808            # Streamable HTTP (recommended for remote)
+  python3 mcp_server.py --sse --port 8808             # SSE (legacy, deprecated)
+  python3 mcp_server.py --http --host 0.0.0.0         # Bind all interfaces""",
+    )
+    parser.add_argument(
+        "--http", action="store_true",
+        help="Run with Streamable HTTP transport (recommended for remote clients)",
     )
     parser.add_argument(
         "--sse", action="store_true",
-        help="Run with SSE transport (HTTP server for remote clients)",
-    )
-    parser.add_argument(
-        "--streamable-http", action="store_true",
-        help="Run with Streamable HTTP transport",
+        help="Run with SSE transport (legacy, deprecated by MCP spec)",
     )
     parser.add_argument(
         "--host", default="127.0.0.1",
@@ -275,7 +275,7 @@ def main():
     )
     parser.add_argument(
         "--port", type=int, default=8808,
-        help="Port for SSE/HTTP transport (default: 8808)",
+        help="Port for HTTP/SSE transport (default: 8808)",
     )
 
     args = parser.parse_args()
@@ -284,14 +284,14 @@ def main():
     mcp.settings.host = args.host
     mcp.settings.port = args.port
 
-    if args.sse:
-        print(f"🚀 MCP server starting (SSE) on {args.host}:{args.port}", file=sys.stderr)
-        print(f"   SSE endpoint: http://{args.host}:{args.port}/sse", file=sys.stderr)
-        mcp.run(transport="sse")
-    elif args.streamable_http:
+    if args.http:
         print(f"🚀 MCP server starting (Streamable HTTP) on {args.host}:{args.port}", file=sys.stderr)
         print(f"   Endpoint: http://{args.host}:{args.port}/mcp", file=sys.stderr)
         mcp.run(transport="streamable-http")
+    elif args.sse:
+        print(f"🚀 MCP server starting (SSE) on {args.host}:{args.port}", file=sys.stderr)
+        print(f"   SSE endpoint: http://{args.host}:{args.port}/sse", file=sys.stderr)
+        mcp.run(transport="sse")
     else:
         # stdio — no output to stderr except from tools
         mcp.run(transport="stdio")

@@ -194,15 +194,17 @@ python3 mcp_server.py
 }
 ```
 
-### Remote Setup (SSE over HTTPS)
+### Remote Setup (Streamable HTTP over HTTPS)
 
-To expose the MCP server to remote clients over the network:
+To expose the MCP server to remote clients (n8n, Claude Desktop, Cursor, etc.) over the network:
 
-#### 1. Start the MCP server in SSE mode
+#### 1. Start the MCP server in HTTP mode
 
 ```bash
-python3 mcp_server.py --sse --host 127.0.0.1 --port 8808
+python3 mcp_server.py --http --host 127.0.0.1 --port 8808
 ```
+
+This starts the Streamable HTTP transport at `/mcp` — the current MCP standard (SSE is deprecated).
 
 #### 2. Create a systemd service (keeps it running)
 
@@ -210,14 +212,14 @@ Create `/etc/systemd/system/monsoft-scrapper-mcp.service`:
 
 ```ini
 [Unit]
-Description=Monsoft Scrapper MCP Server (SSE)
+Description=Monsoft Scrapper MCP Server
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/path/to/scrapling-kit
-ExecStart=/path/to/venv/bin/python3 /path/to/scrapling-kit/mcp_server.py --sse --host 127.0.0.1 --port 8808
+ExecStart=/path/to/venv/bin/python3 /path/to/scrapling-kit/mcp_server.py --http --host 127.0.0.1 --port 8808
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -248,7 +250,7 @@ scrapper-mcp.yourdomain.com {
 }
 ```
 
-> **Important:** The `header_up Host` directive is required. The MCP SSE server validates the Host header, and without this rewrite it will reject requests with a 421 error.
+> **Important:** The `header_up Host` directive is required. The MCP server validates the Host header, and without this rewrite it will reject requests.
 
 ```bash
 sudo systemctl reload caddy
@@ -269,7 +271,7 @@ server {
         proxy_set_header Host localhost:8808;
         proxy_set_header X-Real-IP $remote_addr;
 
-        # Required for SSE
+        # Required for streaming responses
         proxy_http_version 1.1;
         proxy_set_header Connection '';
         proxy_buffering off;
@@ -287,11 +289,17 @@ If using Cloudflare, set the record to **DNS only** (no proxy) — Caddy/nginx h
 
 #### 5. Connect remote clients
 
+**n8n MCP Client node:**
+- Endpoint: `https://scrapper-mcp.yourdomain.com/mcp`
+- Server Transport: **HTTP Streamable**
+- Authentication: None
+
+**Claude Desktop / Cursor / other MCP clients:**
 ```json
 {
     "mcpServers": {
         "monsoft-scrapper": {
-            "url": "https://scrapper-mcp.yourdomain.com/sse"
+            "url": "https://scrapper-mcp.yourdomain.com/mcp"
         }
     }
 }
@@ -301,9 +309,9 @@ If using Cloudflare, set the record to **DNS only** (no proxy) — Caddy/nginx h
 
 ```
 python3 mcp_server.py                              # stdio (local)
-python3 mcp_server.py --sse --port 8808            # SSE (remote)
-python3 mcp_server.py --streamable-http            # Streamable HTTP
-python3 mcp_server.py --sse --host 0.0.0.0         # Bind all interfaces (no reverse proxy)
+python3 mcp_server.py --http --port 8808            # Streamable HTTP (recommended for remote)
+python3 mcp_server.py --sse --port 8808             # SSE (legacy, deprecated)
+python3 mcp_server.py --http --host 0.0.0.0         # Bind all interfaces (no reverse proxy)
 ```
 
 ## Usage Statistics
